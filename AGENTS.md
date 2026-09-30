@@ -86,6 +86,16 @@ msbuild openrct2.proj /t:Build /p:Platform=x64 /p:Configuration=Release
 The game is `bin/openrct2.exe`. Its original game assets must be configured for
 interactive checks. Use a copy of a save when testing changes that alter parks.
 
+## Delivering test builds
+
+- Give the user direct, clickable absolute file links to the built
+  `bin/openrct2.exe` and each sample save game file so they can open them locally.
+- Keep the executable's required runtime data available alongside the build.
+  Include brief instructions for opening the sample save and testing the change.
+- Do not create or deliver ZIP archives or other packaged downloads unless the
+  user explicitly requests them. An archive or launcher is not a substitute for
+  direct links to the built executable and save game files.
+
 ## Windows tests (PowerShell)
 
 The MSVC solution includes the `tests` project and produces `bin/tests.exe`.
