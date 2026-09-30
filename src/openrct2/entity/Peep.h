@@ -43,6 +43,9 @@ namespace OpenRCT2
 
     constexpr auto kPeepClearanceHeight = 4 * kCoordsZStep;
 
+    // Leaving-park var37 value for unadmitted guests seeking a gate after land ownership changes.
+    constexpr uint8_t kPeepLeavingParkSeekEntrance = 2;
+
     enum class PeepState : uint8_t
     {
         falling = 0, // Drowning is part of falling

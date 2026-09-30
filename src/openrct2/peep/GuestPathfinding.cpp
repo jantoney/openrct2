@@ -17,6 +17,7 @@
 #include "../profiling/Profiling.h"
 #include "../ride/RideData.h"
 #include "../scenario/Scenario.h"
+#include "../world/Entrance.h"
 #include "../world/Footpath.h"
 #include "../world/Map.h"
 #include "../world/TileElementsView.h"
@@ -29,6 +30,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <vector>
 
 namespace OpenRCT2::PathFinding
 {
@@ -700,6 +702,7 @@ namespace OpenRCT2::PathFinding
      *
      * The score is only updated when:
      *   - the goal is reached;
+     *   - an outward gate is reached while an outside guest is heading for a map exit;
      *   - a wide tile is encountered with a better search result - the goal may
      *     still be reachable from here (only if the current tile is also wide);
      *   - a junction is encountered with a better search result and
@@ -905,8 +908,16 @@ namespace OpenRCT2::PathFinding
             // Calculate the heuristic score of this map element.
             uint16_t newScore = CalculateHeuristicPathingScore(loc, goal);
 
-            /* If this map element is the search goal the current search path ends here. */
-            if (newScore == 0)
+            // Old saves can contain outside guests still inside a gate, already heading for a map exit.
+            // Treat an outward gate crossing as a possible route onward, rather than a dead end.
+            const auto* guest = peep.as<Guest>();
+            const bool outwardGate = searchResult == PathSearchResult::parkExit && guest != nullptr && guest->outsideOfPark
+                && peep.state == PeepState::leavingPark && peep.var37 == 1
+                && tileElement->asEntrance()->getSequenceIndex() == ParkEntranceSequence::centre
+                && DirectionReverse(tileElement->getDirection()) == testEdge;
+
+            /* Stop at the goal or at an intermediate gate on the way to the map exit. */
+            if (newScore == 0 || outwardGate)
             {
                 /* If the search result is better than the best so far (in the parameters),
                  * then update the parameters with this search before continuing to the next map element. */
@@ -929,8 +940,8 @@ namespace OpenRCT2::PathFinding
                     }
                 }
                 LogPathfinding(
-                    &peep, "Search path ends at %d,%d,%d; Steps: %u; At goal; Score: %d", loc.x >> 5, loc.y >> 5, loc.z,
-                    numSteps, newScore);
+                    &peep, "Search path ends at %d,%d,%d; Steps: %u; At goal or outward gate; Score: %d", loc.x >> 5,
+                    loc.y >> 5, loc.z, numSteps, newScore);
                 continue;
             }
 
@@ -1576,6 +1587,116 @@ namespace OpenRCT2::PathFinding
         return chosenEntrance;
     }
 
+    // Only grant recovery movement when the unowned path component has no arrival or departure route.
+    bool IsArrivalTrappedByOwnedPaths(const Guest& peep)
+    {
+        auto& gameState = getGameState();
+        auto& searches = gameState.arrivalPathSearches;
+        constexpr size_t kMaxConcurrentSearches = 4;
+        constexpr uint32_t kPathsPerTick = 1024;
+        // Rejected arrivals and script-driven state changes must not occupy search slots indefinitely.
+        std::erase_if(searches, [&](const auto& entry) {
+            const auto* guest = gameState.entities.getEntity<Guest>(entry.first);
+            return guest == nullptr || !guest->outsideOfPark || guest->state != PeepState::enteringPark || guest->var37 == 1;
+        });
+        if (gameState.arrivalPathSearchWorkTick != gameState.currentTicks)
+        {
+            gameState.arrivalPathSearchWorkTick = gameState.currentTicks;
+            gameState.arrivalPathSearchWork = 0;
+        }
+        if (gameState.arrivalPathSearchWork >= kPathsPerTick
+            || (!searches.contains(peep.id) && searches.size() >= kMaxConcurrentSearches))
+            return false;
+        const TileCoordsXYZ start{ peep.nextLoc };
+        auto* startPath = MapGetPathElementAt(start);
+        if (startPath == nullptr)
+        {
+            searches.erase(peep.id);
+            return false;
+        }
+
+        auto& search = searches[peep.id];
+        if (!search.pending.empty() && !search.visited.contains({ start.x, start.y, start.z }))
+            search = {};
+        if (search.pending.empty())
+        {
+            search.pending.push_back(start);
+            search.visited.emplace(start.x, start.y, start.z);
+        }
+        if (search.lastUpdateTick == gameState.currentTicks)
+            return false;
+        search.lastUpdateTick = gameState.currentTicks;
+        const auto finish = [&](bool trapped) {
+            searches.erase(peep.id);
+            return trapped;
+        };
+
+        // Coordinates survive tile storage reallocations. Process a bounded amount each update,
+        // retaining the frontier rather than permanently abandoning large unowned components.
+        constexpr uint32_t kPathsPerUpdate = 256;
+        uint32_t pathsChecked = 0;
+        while (search.processed < search.pending.size() && pathsChecked++ < kPathsPerUpdate
+               && gameState.arrivalPathSearchWork < kPathsPerTick)
+        {
+            ++gameState.arrivalPathSearchWork;
+            const auto loc = search.pending[search.processed++];
+            for (const auto& spawn : getGameState().peepSpawns)
+            {
+                if (TileCoordsXYZ{ spawn } == loc)
+                    return finish(false);
+            }
+            for (const auto* path : TileElementsView<PathElement>(loc))
+            {
+                if (path->isGhost() || path->baseHeight != loc.z)
+                    continue;
+                const auto edges = PathGetPermittedEdges(false, path);
+                for (const auto direction : kAllDirections)
+                {
+                    if (!(edges & (1 << direction)))
+                        continue;
+                    auto next = loc;
+                    next += TileDirectionDelta[direction];
+                    if (path->isSloped() && path->getSlopeDirection() == direction)
+                        next.z += 2;
+                    if (MapIsEdge(next.toCoordsXYZ()))
+                        return finish(false);
+                    for (auto* element : TileElementsView<>(next))
+                    {
+                        if (element->isGhost())
+                            continue;
+                        auto* entrance = element->asEntrance();
+                        if (entrance != nullptr && entrance->getEntranceType() == EntranceType::parkEntrance
+                            && entrance->getSequenceIndex() == ParkEntranceSequence::centre && entrance->baseHeight == next.z
+                            && entrance->getDirection() == direction)
+                        {
+                            if (ParkEntranceHasValidInsidePath({ next.toCoordsXYZ(), direction }))
+                                return finish(false);
+                        }
+                        const auto* nextPath = element->asPath();
+                        if (nextPath == nullptr || !FootpathIsZAndDirectionValid(*nextPath, next.z, direction))
+                            continue;
+                        const TileCoordsXYZ nextLoc{ next.x, next.y, nextPath->baseHeight };
+                        if (MapIsLocationOwned(nextLoc.toCoordsXYZ()))
+                        {
+                            search.foundOwnedBoundary = true;
+                            continue;
+                        }
+                        if (search.visited.emplace(nextLoc.x, nextLoc.y, nextLoc.z).second)
+                            search.pending.push_back(nextLoc);
+                    }
+                }
+            }
+        }
+        if (search.processed == search.pending.size())
+            return finish(search.foundOwnedBoundary);
+        return false;
+    }
+
+    void InvalidateArrivalPathSearches()
+    {
+        getGameState().arrivalPathSearches.clear();
+    }
+
     /**
      *
      *  rct2: 0x006952C0
@@ -1957,6 +2078,8 @@ namespace OpenRCT2::PathFinding
                 case PeepState::enteringPark:
                     return GuestPathFindParkEntranceEntering(peep, edges);
                 case PeepState::leavingPark:
+                    if (peep.var37 == kPeepLeavingParkSeekEntrance)
+                        return GuestPathFindParkEntranceLeaving(peep, edges);
                     return GuestPathFindPeepSpawn(peep, edges);
                 default:
                     return GuestPathfindAimless(peep, edges);

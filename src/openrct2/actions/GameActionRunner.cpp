@@ -337,6 +337,9 @@ namespace OpenRCT2::GameActions
             auto& park = gameState.park;
 
             // Execute the action, changing the game state
+            // Preview and unrecorded actions must not change authoritative search progress.
+            if (!flags.has(CommandFlag::ghost) && !(actionFlags & Flags::ClientOnly) && !ignoreForReplays)
+                gameState.arrivalPathSearches.clear();
             result = action->Execute(gameState, park);
 #ifdef ENABLE_SCRIPTING
             if (result.error == Status::ok)

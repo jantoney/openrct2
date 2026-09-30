@@ -438,6 +438,9 @@ namespace OpenRCT2
      */
     void MapInit(const TileCoordsXY& size, Drawing::Colour surfaceColour1)
     {
+        getGameState().arrivalPathSearches.clear();
+        getGameState().arrivalPathSearchWorkTick = UINT32_MAX;
+        getGameState().arrivalPathSearchWork = 0;
         auto numTiles = kMaximumMapSizeTechnical * kMaximumMapSizeTechnical;
 
         auto& gameState = getGameState();

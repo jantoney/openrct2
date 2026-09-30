@@ -1881,6 +1881,9 @@ namespace OpenRCT2
      */
     bool Guest::shouldGoOnRide(Ride& ride, StationIndex entranceNum, bool atQueue, bool thinking)
     {
+        if (outsideOfPark)
+            return false;
+
         // Indicates whether a peep is physically at the ride, or is just thinking about going on the ride.
         bool peepAtRide = !thinking;
 
@@ -5739,6 +5742,15 @@ namespace OpenRCT2
         }
     }
 
+    void Guest::leaveParkAfterOwnershipChange()
+    {
+        getGameState().arrivalPathSearches.erase(id);
+        DecrementGuestsHeadingForPark();
+        setState(PeepState::leavingPark);
+        var37 = kPeepLeavingParkSeekEntrance;
+        resetPathfindGoal();
+    }
+
     /**
      * rct2: 0x691451
      */
@@ -5746,6 +5758,15 @@ namespace OpenRCT2
     {
         if (var37 != 1)
         {
+            // Buying the approach path can enclose guests who have not passed through an entrance.
+            // Send them home without admitting them or including them in the park's guest count.
+            if (MapIsLocationOwned(nextLoc)
+                || (getGameState().arrivalPathSearches.contains(id) && PathFinding::IsArrivalTrappedByOwnedPaths(*this)))
+            {
+                leaveParkAfterOwnershipChange();
+                updateLeavingPark();
+                return;
+            }
             const auto [pathingResult, _] = performNextAction();
             if ((pathingResult & PATHING_OUTSIDE_PARK))
             {
@@ -5761,6 +5782,7 @@ namespace OpenRCT2
         }
         setState(PeepState::falling);
 
+        getGameState().arrivalPathSearches.erase(id);
         outsideOfPark = false;
         parkEntryTime = getGameState().currentTicks;
         IncrementGuestsInPark();
@@ -5790,11 +5812,14 @@ namespace OpenRCT2
             return;
         }
 
-        outsideOfPark = true;
         destinationTolerance = 5;
-        DecrementGuestsInPark();
-        auto intent = Intent(INTENT_ACTION_UPDATE_GUEST_COUNT);
-        ContextBroadcastIntent(&intent);
+        if (!outsideOfPark)
+        {
+            outsideOfPark = true;
+            DecrementGuestsInPark();
+            auto intent = Intent(INTENT_ACTION_UPDATE_GUEST_COUNT);
+            ContextBroadcastIntent(&intent);
+        }
         var37 = 1;
 
         auto* windowMgr = Ui::GetWindowManager();

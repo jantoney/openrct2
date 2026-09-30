@@ -15,6 +15,7 @@
     #include "../../../drawing/TextColour.h"
     #include "../../../object/PathAdditionEntry.h"
     #include "../../../object/WallSceneryEntry.h"
+    #include "../../../peep/GuestPathfinding.h"
     #include "../../../ride/Ride.h"
     #include "../../../ride/RideData.h"
     #include "../../../world/Map.h"
@@ -62,6 +63,8 @@ namespace OpenRCT2::Scripting
 
     static inline void Invalidate(OpaqueTileElementData* data)
     {
+        if (!data->element->isGhost())
+            PathFinding::InvalidateArrivalPathSearches();
         MapInvalidateTileFull(data->coords);
     }
 
@@ -1457,6 +1460,8 @@ namespace OpenRCT2::Scripting
         JS_UNPACK_BOOL(value, ctx, jsValue);
         JS_THROW_IF_GAME_STATE_NOT_MUTABLE();
         auto data = gScTileElement.GetOpaque<OpaqueTileElementData*>(thisValue);
+        if (data->element->isGhost() != value)
+            PathFinding::InvalidateArrivalPathSearches();
         data->element->setGhost(value);
         Invalidate(data);
         return JS_UNDEFINED;

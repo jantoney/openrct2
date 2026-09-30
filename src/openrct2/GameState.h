@@ -16,6 +16,7 @@
 #include "entity/EntityRegistry.h"
 #include "interface/ZoomLevel.h"
 #include "management/NewsItem.h"
+#include "peep/GuestPathfinding.h"
 #include "ride/Ride.h"
 #include "ride/RideRatings.h"
 #include "scenario/ScenarioOptions.h"
@@ -27,6 +28,7 @@
 #include "world/Weather.h"
 
 #include <array>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -73,6 +75,9 @@ namespace OpenRCT2
         std::vector<ScenerySelection> restrictedScenery;
 
         std::vector<PeepSpawn> peepSpawns;
+        std::map<EntityId, PathFinding::ArrivalPathSearch> arrivalPathSearches;
+        uint32_t arrivalPathSearchWorkTick{ UINT32_MAX };
+        uint32_t arrivalPathSearchWork{};
 
         News::ItemQueues newsItems;
 

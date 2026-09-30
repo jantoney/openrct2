@@ -11,6 +11,7 @@
 
     #include "ScTile.hpp"
 
+    #include "../../../peep/GuestPathfinding.h"
     #include "../../../world/Map.h"
     #include "../../../world/tile_element/LargeSceneryElement.h"
 
@@ -113,6 +114,7 @@ namespace OpenRCT2::Scripting
                     first[numElements - 1].setLastForTile(true);
                 }
             }
+            PathFinding::InvalidateArrivalPathSearches();
             MapInvalidateTileFull(coords);
         }
         return JS_UNDEFINED;
@@ -168,6 +170,7 @@ namespace OpenRCT2::Scripting
                 first[i].setLastForTile(false);
             }
             first[origNumElements].setLastForTile(true);
+            PathFinding::InvalidateArrivalPathSearches();
             MapInvalidateTileFull(coords);
             return gScTileElement.New(ctx, &first[index], coords);
         }
@@ -194,6 +197,7 @@ namespace OpenRCT2::Scripting
                 element->removeBannerEntry();
             }
             TileElementRemove(&first[index]);
+            PathFinding::InvalidateArrivalPathSearches();
             MapInvalidateTileFull(coords);
         }
         return JS_UNDEFINED;

@@ -96,6 +96,7 @@ namespace OpenRCT2
         restrictedObjects       = 0x37,
         pluginStorage           = 0x38,
         preview                 = 0x39,
+        arrivalPathSearches     = 0x3A,
         packedObjects           = 0x80
         // clang-format on
     };
@@ -178,6 +179,8 @@ namespace OpenRCT2
             ReadWriteRestrictedObjectsChunk(gameState, os);
             ReadWritePluginStorageChunk(gameState, os);
 
+            ReadWriteArrivalPathSearchesChunk(gameState, os);
+
             auto targetVersion = os.getHeader().targetVersion;
 
             if (targetVersion < 0x4)
@@ -219,6 +222,7 @@ namespace OpenRCT2
             ReadWriteCheatsChunk(gameState, os);
             ReadWriteRestrictedObjectsChunk(gameState, os);
             ReadWritePluginStorageChunk(gameState, os);
+            ReadWriteArrivalPathSearchesChunk(gameState, os);
             ReadWritePreviewChunk(gameState, os);
             ReadWritePackedObjectsChunk(os);
         }
@@ -811,6 +815,56 @@ namespace OpenRCT2
                         cs.write(item.EntryIndex);
                     }
                 });
+            });
+        }
+
+        void ReadWriteArrivalPathSearchesChunk(GameState_t& gameState, OrcaStream& os)
+        {
+            const bool reading = os.getMode() == OrcaStream::Mode::reading;
+            if (reading)
+            {
+                gameState.arrivalPathSearches.clear();
+                gameState.arrivalPathSearchWorkTick = UINT32_MAX;
+                gameState.arrivalPathSearchWork = 0;
+            }
+            if (os.getHeader().targetVersion < kArrivalPathSearchVersion)
+                return;
+            os.readWriteChunk(ParkFileChunkType::arrivalPathSearches, [&](OrcaStream::ChunkStream& cs) {
+                cs.readWrite(gameState.arrivalPathSearchWorkTick);
+                cs.readWrite(gameState.arrivalPathSearchWork);
+                auto count = static_cast<uint32_t>(gameState.arrivalPathSearches.size());
+                cs.readWrite(count);
+                const auto readWriteSearch = [&](PathFinding::ArrivalPathSearch& search) {
+                    cs.readWrite(search.processed);
+                    cs.readWrite(search.lastUpdateTick);
+                    cs.readWrite(search.foundOwnedBoundary);
+                    cs.readWriteVector(search.pending, [&](TileCoordsXYZ& loc) { cs.readWrite(loc); });
+                    if (reading)
+                    {
+                        search.processed = std::min(search.processed, static_cast<uint32_t>(search.pending.size()));
+                        for (const auto& loc : search.pending)
+                            search.visited.emplace(loc.x, loc.y, loc.z);
+                    }
+                };
+                if (reading)
+                {
+                    for (uint32_t i = 0; i < count; ++i)
+                    {
+                        const auto id = cs.read<EntityId>();
+                        PathFinding::ArrivalPathSearch search;
+                        readWriteSearch(search);
+                        if (gameState.entities.getEntity<Guest>(id) != nullptr)
+                            gameState.arrivalPathSearches.emplace(id, std::move(search));
+                    }
+                }
+                else
+                {
+                    for (auto& [id, search] : gameState.arrivalPathSearches)
+                    {
+                        cs.write(id);
+                        readWriteSearch(search);
+                    }
+                }
             });
         }
 

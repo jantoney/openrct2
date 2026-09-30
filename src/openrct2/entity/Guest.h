@@ -351,6 +351,7 @@ namespace OpenRCT2
         ShopItems itemFlags;
 
         void update();
+        void leaveParkAfterOwnershipChange();
         void tick128UpdateGuest(uint32_t index);
         ShopItems getFoodOrDrinkFlags() const;
         ShopItems getEmptyContainerFlags() const;

@@ -37,3 +37,6 @@ void MazeEntranceHedgeRemoval(const CoordsXYE& entrance);
 
 void ParkEntranceFixLocations();
 void ParkEntranceUpdateLocations();
+
+// True when the entrance leads to an owned, non-queue path at a compatible height and slope.
+bool ParkEntranceHasValidInsidePath(const CoordsXYZD& entrance);

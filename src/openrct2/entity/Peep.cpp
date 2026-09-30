@@ -47,6 +47,7 @@
 #include "../util/Util.h"
 #include "../windows/Intent.h"
 #include "../world/ConstructionClearance.h"
+#include "../world/Entrance.h"
 #include "../world/Footpath.h"
 #include "../world/Map.h"
 #include "../world/Park.h"
@@ -714,6 +715,7 @@ namespace OpenRCT2
      */
     void PeepEntityRemove(Peep* peep)
     {
+        getGameState().arrivalPathSearches.erase(peep->id);
         auto* guest = peep->as<Guest>();
         if (guest != nullptr)
         {
@@ -1680,13 +1682,14 @@ namespace OpenRCT2
                 }
 
                 // Peep is leaving the park.
-                if (guest->state != PeepState::walking)
+                const bool unadmittedGuestLeaving = guest->outsideOfPark && guest->state == PeepState::leavingPark;
+                if (guest->state != PeepState::walking && !unadmittedGuestLeaving)
                 {
                     PeepReturnToCentreOfTile(guest);
                     return true;
                 }
 
-                if (!guest->peepFlags.has(PeepFlag::leavingPark))
+                if (!guest->peepFlags.has(PeepFlag::leavingPark) && !unadmittedGuestLeaving)
                 {
                     // If the park is open and leaving flag isn't set return to centre
                     if (gameState.park.flags.has(ParkFlag::parkOpen))
@@ -1732,60 +1735,11 @@ namespace OpenRCT2
                 return true;
             }
 
-            bool found = false;
-            auto entrance = std::find_if(
+            const auto entrance = std::find_if(
                 gameState.park.entrances.begin(), gameState.park.entrances.end(),
                 [coords](const auto& e) { return coords.toTileStart() == e; });
-            if (entrance != gameState.park.entrances.end())
-            {
-                int16_t z = entrance->z / 8;
-                entranceDirection = entrance->direction;
-                auto nextLoc = coords.toTileStart() + CoordsDirectionDelta[entranceDirection];
-
-                // Make sure there is a path right behind the entrance, otherwise turn around
-                TileElement* nextTileElement = MapGetFirstElementAt(nextLoc);
-                do
-                {
-                    if (nextTileElement == nullptr)
-                        break;
-                    if (nextTileElement->getType() != TileElementType::path)
-                        continue;
-
-                    if (nextTileElement->asPath()->isQueue())
-                        continue;
-
-                    if (nextTileElement->asPath()->isSloped())
-                    {
-                        uint8_t slopeDirection = nextTileElement->asPath()->getSlopeDirection();
-                        if (slopeDirection == entranceDirection)
-                        {
-                            if (z != nextTileElement->baseHeight)
-                            {
-                                continue;
-                            }
-                            found = true;
-                            break;
-                        }
-
-                        if (DirectionReverse(slopeDirection) != entranceDirection)
-                            continue;
-
-                        if (z - 2 != nextTileElement->baseHeight)
-                            continue;
-                        found = true;
-                        break;
-                    }
-
-                    if (z != nextTileElement->baseHeight)
-                    {
-                        continue;
-                    }
-                    found = true;
-                    break;
-                } while (!(nextTileElement++)->isLastForTile());
-            }
-
-            if (!found)
+            if (entrance == gameState.park.entrances.end() || MapIsLocationOwned(guest->nextLoc)
+                || !ParkEntranceHasValidInsidePath(*entrance))
             {
                 guest->state = PeepState::leavingPark;
                 guest->var37 = 1;
@@ -2021,10 +1975,20 @@ namespace OpenRCT2
         auto* guest = peep->as<Guest>();
         if (MapIsLocationOwned({ coords, z }))
         {
-            if (guest != nullptr && guest->outsideOfPark)
+            // Arrivals stay outside the fence. Only guests recovering from enclosure or already leaving
+            // may cross ownership boundaries without passing through an entrance.
+            if (guest != nullptr && guest->outsideOfPark && guest->state != PeepState::leavingPark)
             {
-                PeepReturnToCentreOfTile(guest);
-                return;
+                if (guest->state == PeepState::enteringPark
+                    && (MapIsLocationOwned(guest->nextLoc) || PathFinding::IsArrivalTrappedByOwnedPaths(*guest)))
+                {
+                    guest->leaveParkAfterOwnershipChange();
+                }
+                else
+                {
+                    PeepReturnToCentreOfTile(guest);
+                    return;
+                }
             }
         }
         else

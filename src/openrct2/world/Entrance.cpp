@@ -15,8 +15,11 @@
 #include "../actions/ride/RideEntranceExitPlaceAction.h"
 #include "../actions/ride/RideEntranceExitRemoveAction.h"
 #include "../ride/RideConstruction.h"
+#include "Footpath.h"
 #include "Map.h"
+#include "TileElementsView.h"
 #include "tile_element/EntranceElement.h"
+#include "tile_element/PathElement.h"
 #include "tile_element/TrackElement.h"
 
 using namespace OpenRCT2;
@@ -71,6 +74,21 @@ int32_t ParkEntranceGetIndex(const CoordsXYZ& entrancePos)
 void ParkEntranceReset()
 {
     getGameState().park.entrances.clear();
+}
+
+bool ParkEntranceHasValidInsidePath(const CoordsXYZD& entrance)
+{
+    const CoordsXY inside = entrance + CoordsDirectionDelta[entrance.direction];
+    for (const auto* path : TileElementsView<PathElement>(TileCoordsXY{ inside }))
+    {
+        if (!path->isGhost() && !path->isQueue()
+            && FootpathIsZAndDirectionValid(*path, entrance.z / kCoordsZStep, entrance.direction)
+            && MapIsLocationOwned({ inside, path->getBaseZ() }))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 void OpenRCT2::RideEntranceExitPlaceProvisionalGhost()
