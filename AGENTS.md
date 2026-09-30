@@ -10,6 +10,7 @@ formatting configuration when an older wiki example disagrees with this revision
 - [Contributing](CONTRIBUTING.md)
 - [How to contribute](https://github.com/OpenRCT2/OpenRCT2/wiki/How-To-Contribute)
 - [Coding style](https://github.com/OpenRCT2/OpenRCT2/wiki/Coding-Style)
+- [Code Style Consistency #26521](https://github.com/OpenRCT2/OpenRCT2/issues/26521)
 - [Windows builds](https://github.com/OpenRCT2/OpenRCT2/wiki/Building-OpenRCT2-on-Windows)
 - Build/test implementation: `openrct2.proj`, `openrct2.sln`,
   `openrct2.common.props`, `test/tests/tests.vcxproj`, `scripts/run-tests`.
@@ -38,9 +39,19 @@ formatting configuration when an older wiki example disagrees with this revision
 - Use `.editorconfig` and `.clang-format`: UTF-8, four spaces, final newline,
   and a 128-column formatting limit. Format changed code without unrelated churn.
   CI's `scripts/check-code-formatting` uses clang-format 20 and modifies files.
-- Follow the official naming examples: PascalCase functions, camelCase locals
-  and arguments, `_`-prefixed private members, and `g`-prefixed globals.
-  Match established conventions in the specific module; avoid wholesale renaming.
+- Follow the naming direction in issue #26521 for new and changed declarations:
+  types use PascalCase; class/struct fields and methods (including static methods)
+  and scoped enum entries use lowerCamelCase; C++ constants use kCamelCase;
+  macros use SCREAMING_SNAKE_CASE. Keep `_lowerCamelCase` for private fields,
+  lowerCamelCase for locals/arguments, and `g`-prefixed globals where established.
+  Free functions follow the module's existing convention (often PascalCase).
+- Preserve required override/framework names and existing external API names.
+  Do not rename unrelated legacy declarations or their call sites in a bug fix.
+  Review newly added names explicitly: clang-format does not check naming, and
+  this revision's `.clang-tidy` does not enforce every rule from #26521.
+- For a dedicated naming migration, reread #26521 and its latest comments for
+  current maintainer guidance and claimed work units. Keep changes narrow and
+  build/test them; coordinate upstream only with explicit user authorization.
 - Use explicit `nullptr` checks and `auto*` for deduced pointers. Explain intent
   and non-obvious constraints in comments rather than restating the code.
 - Add base-language strings to `data/language/en-GB.txt`; translations belong in
